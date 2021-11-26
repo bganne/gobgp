@@ -3881,7 +3881,7 @@ func (s *BgpServer) ResetRpki(ctx context.Context, r *api.ResetRpkiRequest) erro
 	}, false)
 }
 
-func (s *BgpServer) MonitorTable(ctx context.Context, r *api.MonitorTableRequest, fn func(*api.Path)) error {
+func (s *BgpServer) monitorTable__(ctx context.Context, r *api.MonitorTableRequest, fn func(*table.Path)) error {
 	if r == nil {
 		return fmt.Errorf("nil request")
 	}
@@ -3940,7 +3940,7 @@ func (s *BgpServer) MonitorTable(ctx context.Context, r *api.MonitorTableRequest
 					case <-ctx.Done():
 						return
 					default:
-						fn(toPathApi(path, nil, false, false))
+						fn(path)
 					}
 				}
 			case <-ctx.Done():
@@ -3949,6 +3949,38 @@ func (s *BgpServer) MonitorTable(ctx context.Context, r *api.MonitorTableRequest
 		}
 	}()
 	return nil
+}
+
+type Path struct {
+	Nlri               bgp.AddrPrefixInterface
+	Pattrs             *[]bgp.PathAttributeInterface
+	Age                time.Time
+	IsWithdraw         bool
+	Stale              bool
+	IsFromExternal     bool
+	NoImplicitWithdraw bool
+	IsNexthopInvalid   bool
+}
+
+func (s *BgpServer) MonitorTable(ctx context.Context, r *api.MonitorTableRequest, fn func(*api.Path)) error {
+	return s.monitorTable__(ctx, r, func(p *table.Path) { fn(toPathApi(p, nil, false, false)) })
+}
+
+func (s *BgpServer) MonitorTableInternal(ctx context.Context, r *api.MonitorTableRequest, fn func(*Path)) error {
+	return s.monitorTable__(ctx, r,
+		func(path *table.Path) {
+			pattrs := path.GetPathAttrs()
+			fn(&Path{
+				Nlri:               path.GetNlri(),
+				Pattrs:             &pattrs,
+				Age:                path.GetTimestamp(),
+				IsWithdraw:         path.IsWithdraw,
+				Stale:              path.IsStale(),
+				IsFromExternal:     path.IsFromExternal(),
+				NoImplicitWithdraw: path.NoImplicitWithdraw(),
+				IsNexthopInvalid:   path.IsNexthopInvalid,
+			})
+		})
 }
 
 func (s *BgpServer) MonitorPeer(ctx context.Context, r *api.MonitorPeerRequest, fn func(*api.Peer)) error {
